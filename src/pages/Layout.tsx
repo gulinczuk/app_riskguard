@@ -1,5 +1,7 @@
+import { useState } from 'react'
 import { NavLink, Outlet, Navigate } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext'
+import { createInvite } from '../lib/invites'
 import logo from '../assets/logo.png'
 
 const navItems = [
@@ -10,7 +12,7 @@ const navItems = [
 ]
 
 export default function Layout() {
-  const { session, loading, signOut, user } = useAuth()
+  const { session, loading, clientUser, signOut, user } = useAuth()
 
   if (loading) {
     return (
@@ -21,6 +23,9 @@ export default function Layout() {
   }
 
   if (!session) return <Navigate to="/login" replace />
+
+  // Operador não deve ver as telas de gestão (fazendas, equipamentos, etc).
+  if (clientUser?.role === 'operador') return <Navigate to="/operador" replace />
 
   return (
     <div className="min-h-screen bg-rg-black text-white flex flex-col">
@@ -47,6 +52,7 @@ export default function Layout() {
             ))}
           </nav>
           <div className="flex items-center gap-3">
+            {clientUser?.role === 'gestor' && <InviteOperatorButton />}
             <span className="hidden md:inline text-xs text-zinc-500">{user?.email}</span>
             <button
               onClick={() => signOut()}
@@ -78,5 +84,73 @@ export default function Layout() {
         <Outlet />
       </main>
     </div>
+  )
+}
+
+// Botão + modal simples pro gestor gerar um link de convite pra um
+// operador. Adicionado fora do escopo estrito da Etapa 1 só pra fechar o
+// ciclo de teste ponta a ponta (sem isso não dá pra gerar um convite real
+// pra testar o fluxo de cadastro). UX melhor pode vir depois.
+function InviteOperatorButton() {
+  const [open, setOpen] = useState(false)
+  const [link, setLink] = useState<string | null>(null)
+  const [error, setError] = useState<string | null>(null)
+  const [loadingInvite, setLoadingInvite] = useState(false)
+
+  async function handleOpen() {
+    setOpen(true)
+    setError(null)
+    setLink(null)
+    setLoadingInvite(true)
+    const { data, error } = await createInvite()
+    setLoadingInvite(false)
+    if (error || !data) {
+      setError(error ?? 'Não foi possível gerar o convite.')
+      return
+    }
+    setLink(`${window.location.origin}/convite/${data.code}`)
+  }
+
+  return (
+    <>
+      <button
+        onClick={handleOpen}
+        className="text-sm text-zinc-400 hover:text-white border border-zinc-700 rounded-lg px-3 py-1.5"
+      >
+        Convidar operador
+      </button>
+      {open && (
+        <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 px-4">
+          <div className="bg-rg-dark border border-zinc-800 rounded-xl p-6 w-full max-w-sm space-y-3">
+            <h2 className="text-white font-semibold">Convidar operador</h2>
+            {loadingInvite && <p className="text-sm text-zinc-400">Gerando link...</p>}
+            {error && (
+              <p className="text-sm text-risk-red bg-red-950/40 border border-red-900 rounded-lg px-3 py-2">
+                {error}
+              </p>
+            )}
+            {link && (
+              <div className="space-y-2">
+                <p className="text-sm text-zinc-400">
+                  Envie este link. Ele expira em 7 dias e só pode ser usado uma vez.
+                </p>
+                <input
+                  readOnly
+                  value={link}
+                  onFocus={(e) => e.currentTarget.select()}
+                  className="w-full rounded-lg bg-zinc-900 border border-zinc-700 px-3 py-2 text-white text-xs"
+                />
+              </div>
+            )}
+            <button
+              onClick={() => setOpen(false)}
+              className="w-full bg-zinc-800 hover:bg-zinc-700 transition-colors text-white font-medium py-2 rounded-lg"
+            >
+              Fechar
+            </button>
+          </div>
+        </div>
+      )}
+    </>
   )
 }
