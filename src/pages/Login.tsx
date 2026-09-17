@@ -1,5 +1,5 @@
 import { useState, type FormEvent } from 'react'
-import { Navigate } from 'react-router-dom'
+import { Navigate, useParams, useSearchParams } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext'
 import logo from '../assets/logo.png'
 
@@ -7,7 +7,17 @@ type Mode = 'signin' | 'signup'
 
 export default function Login() {
   const { session, loading, signIn, signUp, signInWithGoogle } = useAuth()
-  const [mode, setMode] = useState<Mode>('signin')
+  // Convite chega por /convite/:code (link mandado pelo gestor) ou, no
+  // retorno da confirmação de e-mail, por ?convite=CODE — ambos os casos
+  // caem nessa mesma tela de login/cadastro.
+  const { code: codeFromPath } = useParams<{ code?: string }>()
+  const [searchParams] = useSearchParams()
+  const inviteCode = codeFromPath ?? searchParams.get('convite') ?? null
+
+  // Quem chega via link de convite normalmente ainda não tem conta —
+  // começa direto na aba de cadastro, mas pode trocar pra "Entrar" se já
+  // tiver uma conta e só precisar vincular o convite.
+  const [mode, setMode] = useState<Mode>(inviteCode ? 'signup' : 'signin')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [error, setError] = useState<string | null>(null)
@@ -30,7 +40,7 @@ export default function Login() {
       return
     }
 
-    const { error, needsEmailConfirmation } = await signUp(email, password)
+    const { error, needsEmailConfirmation } = await signUp(email, password, inviteCode)
     setSubmitting(false)
     if (error) {
       setError(traduzErro(error))
@@ -46,7 +56,7 @@ export default function Login() {
   async function handleGoogle() {
     setError(null)
     setGoogleLoading(true)
-    const { error } = await signInWithGoogle()
+    const { error } = await signInWithGoogle(inviteCode)
     setGoogleLoading(false)
     if (error) setError(traduzErro(error))
   }
@@ -61,6 +71,12 @@ export default function Login() {
         </div>
 
         <div className="bg-rg-dark border border-zinc-800 rounded-xl p-6 space-y-4">
+          {inviteCode && (
+            <p className="text-sm text-zinc-300 bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-2">
+              Você recebeu um convite para entrar como <strong>operador</strong> de uma empresa
+              existente. Crie sua conta (ou entre, se já tiver uma) para vincular.
+            </p>
+          )}
           <div className="flex rounded-lg bg-zinc-900 p-1 text-sm font-medium">
             <button
               type="button"
