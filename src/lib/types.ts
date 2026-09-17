@@ -1,10 +1,25 @@
 // Tipos espelhando exatamente o schema do Supabase (Riskguard).
 // Mantenha em sincronia com Riskguard_schema_completo.sql.
 
+export type ClientRole = 'gestor' | 'operador'
+
 export interface ClientUser {
   user_id: string
   client_id: string
   is_sompo_staff: boolean
+  role: ClientRole
+}
+
+export interface Invite {
+  id: string
+  client_id: string
+  code: string
+  created_by: string | null
+  created_at: string
+  expires_at: string
+  used_by: string | null
+  used_at: string | null
+  revoked: boolean
 }
 
 export interface Farm {
