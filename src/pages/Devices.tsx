@@ -19,6 +19,33 @@ export default function Devices() {
   const [farmId, setFarmId] = useState('')
   const [saving, setSaving] = useState(false)
 
+  // Senha do operador (Etapa 3): sem isso nenhum operador consegue logar
+  // no equipamento — riskguard_set_device_password grava o hash.
+  const [passwordDeviceId, setPasswordDeviceId] = useState<string | null>(null)
+  const [passwordValue, setPasswordValue] = useState('')
+  const [savingPassword, setSavingPassword] = useState(false)
+  const [passwordMsg, setPasswordMsg] = useState<string | null>(null)
+
+  async function handleSavePassword(deviceId: string) {
+    setSavingPassword(true)
+    setPasswordMsg(null)
+    const { error: err } = await supabase.rpc('riskguard_set_device_password', {
+      p_device_id: deviceId,
+      p_senha: passwordValue,
+    })
+    setSavingPassword(false)
+    if (err) {
+      setPasswordMsg(err.message)
+      return
+    }
+    setPasswordMsg('Senha salva.')
+    setPasswordValue('')
+    setTimeout(() => {
+      setPasswordDeviceId(null)
+      setPasswordMsg(null)
+    }, 1200)
+  }
+
   async function loadAll() {
     setLoading(true)
     const [devicesRes, farmsRes] = await Promise.all([
@@ -181,6 +208,43 @@ export default function Devices() {
                     {d.tractor_model ? ` · ${d.tractor_model}` : ''}
                   </p>
                   <p className="text-xs text-zinc-500">Fazenda: {farmNameById(d.farm_id)}</p>
+
+                  {passwordDeviceId === d.id ? (
+                    <div className="mt-2 flex items-center gap-2">
+                      <input
+                        type="password"
+                        autoFocus
+                        value={passwordValue}
+                        onChange={(e) => setPasswordValue(e.target.value)}
+                        placeholder="Nova senha (mín. 4 caracteres)"
+                        className="rounded-lg bg-zinc-900 border border-zinc-700 px-2 py-1 text-sm text-white"
+                      />
+                      <button
+                        onClick={() => handleSavePassword(d.id)}
+                        disabled={savingPassword || passwordValue.length < 4}
+                        className="text-xs bg-risk-red hover:bg-red-700 text-white px-2 py-1 rounded disabled:opacity-50"
+                      >
+                        {savingPassword ? 'Salvando...' : 'Salvar'}
+                      </button>
+                      <button
+                        onClick={() => {
+                          setPasswordDeviceId(null)
+                          setPasswordValue('')
+                        }}
+                        className="text-xs text-zinc-500 hover:text-white"
+                      >
+                        Cancelar
+                      </button>
+                      {passwordMsg && <span className="text-xs text-zinc-400">{passwordMsg}</span>}
+                    </div>
+                  ) : (
+                    <button
+                      onClick={() => setPasswordDeviceId(d.id)}
+                      className="mt-2 text-xs text-zinc-500 hover:text-white underline"
+                    >
+                      Senha do operador
+                    </button>
+                  )}
                 </div>
                 <Link
                   to={`/equipamentos/${d.id}`}
