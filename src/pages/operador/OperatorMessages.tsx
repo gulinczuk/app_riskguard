@@ -1,5 +1,6 @@
 import { useEffect, useState, useCallback } from 'react'
 import { supabase } from '../../lib/supabaseClient'
+import { useAuth } from '../../contexts/AuthContext'
 import type { Message } from '../../lib/types'
 
 const REFRESH_MS = 20000
@@ -8,22 +9,28 @@ const RECENT_LIMIT = 20
 const SEVERITY_DOT: Record<string, string> = {
   grave: 'bg-risk-red',
   medio: 'bg-yellow-500',
-  baixo: 'bg-zinc-500',
+  info: 'bg-zinc-500',
 }
 
 export default function OperatorMessages() {
+  const { user } = useAuth()
   const [unreadCount, setUnreadCount] = useState(0)
   const [open, setOpen] = useState(false)
   const [messages, setMessages] = useState<Message[]>([])
 
+  // "Não lida" aqui = read_at nulo e não foi o próprio usuário quem
+  // enviou (RLS já garante que só vem mensagem do client_id do operador,
+  // não existe recipient_role pra filtrar por papel).
   const loadUnreadCount = useCallback(async () => {
-    const { count } = await supabase
+    if (!user) return
+    let query = supabase
       .from('messages')
       .select('id', { count: 'exact', head: true })
-      .eq('recipient_role', 'operador')
       .is('read_at', null)
+      .neq('sender_id', user.id)
+    const { count } = await query
     setUnreadCount(count ?? 0)
-  }, [])
+  }, [user])
 
   useEffect(() => {
     loadUnreadCount()
@@ -38,16 +45,17 @@ export default function OperatorMessages() {
     const { data } = await supabase
       .from('messages')
       .select('*')
-      .eq('recipient_role', 'operador')
       .order('created_at', { ascending: false })
       .limit(RECENT_LIMIT)
 
     const list = (data as Message[]) ?? []
     setMessages(list)
 
-    const unreadIds = list.filter((m) => !m.read_at).map((m) => m.id)
+    const unreadIds = list.filter((m) => !m.read_at && m.sender_id !== user?.id).map((m) => m.id)
     if (unreadIds.length > 0) {
-      await supabase.from('messages').update({ read_at: new Date().toISOString() }).in('id', unreadIds)
+      await Promise.all(
+        unreadIds.map((id) => supabase.rpc('riskguard_mark_message_read', { p_message_id: id }))
+      )
       setUnreadCount(0)
     }
   }
@@ -74,7 +82,7 @@ export default function OperatorMessages() {
           {messages.map((m) => (
             <div key={m.id} className="text-sm px-3 py-2 rounded-lg hover:bg-zinc-900">
               <div className="flex items-center gap-2 text-xs text-zinc-500 mb-0.5">
-                {m.severity && <span className={`w-1.5 h-1.5 rounded-full ${SEVERITY_DOT[m.severity]}`} />}
+                <span className={`w-1.5 h-1.5 rounded-full ${SEVERITY_DOT[m.severity]}`} />
                 <span>{m.sender_type === 'ia' ? 'IA' : m.sender_type}</span>
                 <span>· {new Date(m.created_at).toLocaleString('pt-BR')}</span>
               </div>
