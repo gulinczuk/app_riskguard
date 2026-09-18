@@ -1,10 +1,12 @@
-import { useEffect, useState, useCallback } from 'react'
+import { useEffect, useState, useCallback, type FormEvent } from 'react'
 import { useParams, Link } from 'react-router-dom'
 import { supabase } from '../lib/supabaseClient'
 import { useAuth } from '../contexts/AuthContext'
 import type { Device, RiskScore, TheftEvent, Telemetry, LongTermPrediction } from '../lib/types'
 import RiskBadge from '../components/RiskBadge'
 import FactorsBar from '../components/FactorsBar'
+import MessagesPanel from '../components/MessagesPanel'
+import { getDevicePasswordStatus, setDevicePassword, type DevicePasswordStatus } from '../lib/devicePassword'
 
 type HistoryItem =
   | { kind: 'telemetry'; ts: string; data: Telemetry }
@@ -15,7 +17,7 @@ const HISTORY_LIMIT = 40
 
 export default function DeviceDetail() {
   const { id } = useParams<{ id: string }>()
-  const { user } = useAuth()
+  const { user, clientUser } = useAuth()
 
   const [device, setDevice] = useState<Device | null>(null)
   const [latestRisk, setLatestRisk] = useState<RiskScore | null>(null)
@@ -25,6 +27,15 @@ export default function DeviceDetail() {
   const [loading, setLoading] = useState(true)
   const [resolvingId, setResolvingId] = useState<number | null>(null)
   const [error, setError] = useState<string | null>(null)
+
+  const [passwordStatus, setPasswordStatus] = useState<DevicePasswordStatus | null>(null)
+  const [newPassword, setNewPassword] = useState('')
+  const [savingPassword, setSavingPassword] = useState(false)
+  const [passwordError, setPasswordError] = useState<string | null>(null)
+  const [passwordSuccess, setPasswordSuccess] = useState(false)
+
+  const [acknowledging, setAcknowledging] = useState(false)
+  const [ackNotes, setAckNotes] = useState('')
 
   const loadAll = useCallback(async () => {
     if (!id) return
@@ -61,6 +72,9 @@ export default function DeviceDetail() {
 
     setHistory(combined.slice(0, HISTORY_LIMIT))
     setLoading(false)
+
+    const { data: pwStatus } = await getDevicePasswordStatus(id)
+    setPasswordStatus(pwStatus)
   }, [id])
 
   useEffect(() => {
@@ -68,6 +82,40 @@ export default function DeviceDetail() {
     const interval = setInterval(loadAll, 20000)
     return () => clearInterval(interval)
   }, [loadAll])
+
+  async function handleSetPassword(e: FormEvent) {
+    e.preventDefault()
+    if (!id) return
+    setSavingPassword(true)
+    setPasswordError(null)
+    setPasswordSuccess(false)
+    const { error } = await setDevicePassword(id, newPassword)
+    setSavingPassword(false)
+    if (error) {
+      setPasswordError(error)
+      return
+    }
+    setNewPassword('')
+    setPasswordSuccess(true)
+    const { data: pwStatus } = await getDevicePasswordStatus(id)
+    setPasswordStatus(pwStatus)
+  }
+
+  async function handleAcknowledge() {
+    if (!latestRisk) return
+    setAcknowledging(true)
+    const { error } = await supabase.rpc('riskguard_acknowledge_risk_score', {
+      p_score_id: latestRisk.id,
+      p_notes: ackNotes || null,
+    })
+    setAcknowledging(false)
+    if (error) {
+      setError(`Não foi possível revisar o score: ${error.message}`)
+      return
+    }
+    setAckNotes('')
+    loadAll()
+  }
 
   async function handleResolve(eventId: number) {
     if (!user) return
@@ -158,6 +206,31 @@ export default function DeviceDetail() {
               <p className="text-xs text-zinc-600">
                 Atualizado em {new Date(latestRisk.ts).toLocaleString('pt-BR')} · modelo {latestRisk.model_version}
               </p>
+
+              <div className="pt-3 border-t border-zinc-800">
+                {latestRisk.acknowledged_at ? (
+                  <p className="text-xs text-zinc-500">
+                    ✓ Revisado em {new Date(latestRisk.acknowledged_at).toLocaleString('pt-BR')}
+                    {latestRisk.resolution_notes ? ` — "${latestRisk.resolution_notes}"` : ''}
+                  </p>
+                ) : (
+                  <div className="space-y-2">
+                    <input
+                      value={ackNotes}
+                      onChange={(e) => setAckNotes(e.target.value)}
+                      placeholder="Observação (opcional)"
+                      className="w-full rounded-lg bg-zinc-900 border border-zinc-700 px-3 py-1.5 text-xs text-white"
+                    />
+                    <button
+                      onClick={handleAcknowledge}
+                      disabled={acknowledging}
+                      className="text-xs bg-zinc-800 hover:bg-zinc-700 transition-colors text-white font-medium px-3 py-1.5 rounded-lg disabled:opacity-50"
+                    >
+                      {acknowledging ? 'Salvando...' : 'Marcar score como revisado'}
+                    </button>
+                  </div>
+                )}
+              </div>
             </div>
           ) : (
             <p className="text-zinc-500 text-sm">Ainda não há score de risco calculado para este equipamento.</p>
@@ -186,6 +259,50 @@ export default function DeviceDetail() {
             ))}
           </div>
         </div>
+      </div>
+
+      <div className="grid gap-6 lg:grid-cols-2">
+        <div className="bg-rg-dark border border-zinc-800 rounded-xl p-5 space-y-3">
+          <h2 className="text-lg font-bold">Senha do equipamento</h2>
+          <p className="text-sm text-zinc-400">
+            O operador usa essa senha pra iniciar o turno nessa máquina. A senha em si
+            nunca é mostrada de novo depois de salva.
+          </p>
+          {passwordStatus?.has_password && (
+            <p className="text-xs text-zinc-500">
+              Senha definida{passwordStatus.updated_at ? ` · última troca em ${new Date(passwordStatus.updated_at).toLocaleString('pt-BR')}` : ''}
+            </p>
+          )}
+          <form onSubmit={handleSetPassword} className="flex flex-col sm:flex-row gap-2">
+            <input
+              type="password"
+              value={newPassword}
+              onChange={(e) => setNewPassword(e.target.value)}
+              placeholder={passwordStatus?.has_password ? 'Nova senha' : 'Definir senha (mín. 4 caracteres)'}
+              minLength={4}
+              required
+              className="flex-1 rounded-lg bg-zinc-900 border border-zinc-700 px-3 py-2 text-white text-sm"
+            />
+            <button
+              type="submit"
+              disabled={savingPassword}
+              className="bg-risk-red hover:bg-red-700 transition-colors text-white text-sm font-semibold px-4 py-2 rounded-lg disabled:opacity-50 whitespace-nowrap"
+            >
+              {savingPassword ? 'Salvando...' : passwordStatus?.has_password ? 'Trocar senha' : 'Definir senha'}
+            </button>
+          </form>
+          {passwordError && <p className="text-sm text-risk-red">{passwordError}</p>}
+          {passwordSuccess && <p className="text-sm text-green-400">Senha salva com sucesso.</p>}
+        </div>
+
+        {clientUser && user && (
+          <MessagesPanel
+            clientId={clientUser.client_id}
+            deviceId={id}
+            currentUserId={user.id}
+            role="gestor"
+          />
+        )}
       </div>
     </div>
   )
