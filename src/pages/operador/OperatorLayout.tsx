@@ -1,9 +1,8 @@
 import { Outlet, Navigate } from 'react-router-dom'
 import { useAuth } from '../../contexts/AuthContext'
 import logo from '../../assets/logo.png'
+import OperatorMessages from './OperatorMessages'
 
-// Layout mínimo pra área do operador. Conteúdo de verdade (navegação,
-// telas) vem na Etapa 3 — por enquanto só garante o roteamento por role.
 export default function OperatorLayout() {
   const { session, loading, clientUser, signOut, user } = useAuth()
 
@@ -32,6 +31,7 @@ export default function OperatorLayout() {
             </span>
           </div>
           <div className="flex items-center gap-3">
+            <OperatorMessages />
             <span className="hidden md:inline text-xs text-zinc-500">{user?.email}</span>
             <button
               onClick={() => signOut()}
