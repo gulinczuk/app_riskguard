@@ -28,9 +28,9 @@ export default function App() {
             <Route path="/geofences" element={<Geofences />} />
           </Route>
 
-          {/* Área do operador — rotas vazias por enquanto, conteúdo vem na
-              Etapa 3. OperatorLayout já garante que só role='operador'
-              acessa (gestor é redirecionado pra "/"). */}
+          {/* Área do operador — início de turno, painel de risco/caixa-preta
+              e mensagens (Etapa 3). OperatorLayout garante que só
+              role='operador' acessa (gestor é redirecionado pra "/"). */}
           <Route path="/operador" element={<OperatorLayout />}>
             <Route index element={<OperatorHome />} />
           </Route>

@@ -76,6 +76,9 @@ export interface RiskScore {
   short_term_prediction: string | null
   model_version: string
   created_at: string
+  acknowledged_by: string | null
+  acknowledged_at: string | null
+  resolution_notes: string | null
 }
 
 export interface LongTermPrediction {
@@ -129,17 +132,16 @@ export interface OperatorSession {
   force_started: boolean
 }
 
-export type MessageSeverity = 'baixo' | 'medio' | 'grave'
-export type MessageSenderType = 'ia' | 'sistema' | 'gestor' | 'operador'
-export type MessageRecipientRole = 'gestor' | 'operador'
+export type MessageSeverity = 'info' | 'medio' | 'grave'
+export type MessageSenderType = 'gestor' | 'operador' | 'ia'
 
 export interface Message {
   id: number
   client_id: string
   device_id: string | null
+  sender_id: string | null
   sender_type: MessageSenderType
-  recipient_role: MessageRecipientRole
-  severity: MessageSeverity | null
+  severity: MessageSeverity
   body: string
   created_at: string
   read_at: string | null
